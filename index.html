@@ -308,10 +308,16 @@ async function openBook(id){
     urls.forEach(u=>URL.revokeObjectURL(u)); urls.clear();
     $("#main").hidden=true; $("#reader").hidden=false; $("#rTitle").textContent=meta.name; $("#rRange").max=imgs.length;
     closeSheet(); layout(); showPage();
+    if(history.state?.koma!=="reader") history.pushState({koma:"reader"},""); // 뒤로가기를 누르면 앱이 꺼지지 않고 책장으로
     meta.opened=Date.now(); idb.put("books",meta).catch(()=>{});
   }catch(err){ toast("책을 열지 못했습니다: "+(err.message||err)); }
 }
-$("#rBack").onclick=()=>{ $("#reader").hidden=true; $("#main").hidden=false; B=null; urls.forEach(u=>URL.revokeObjectURL(u)); urls.clear(); loadShelf(); counts(); };
+function leaveReader(){ closeSheet(); $("#reader").hidden=true; $("#main").hidden=false; B=null; urls.forEach(u=>URL.revokeObjectURL(u)); urls.clear(); loadShelf(); counts(); }
+$("#rBack").onclick=()=>{ const st=history.state?.koma; if(st==="sheet") history.go(-2); else if(st==="reader") history.back(); else leaveReader(); };
+/* 휴대폰 뒤로가기: 풀이 창이 열려 있으면 창만 닫고, 아니면 책장으로 돌아간다 */
+window.addEventListener("popstate",e=>{ const st=e.state?.koma;
+  if(st!=="sheet"&&$("#sheet").classList.contains("open")) closeSheet(true);
+  if(st!=="sheet"&&st!=="reader"&&!$("#reader").hidden) leaveReader(); });
 const pageKey=i=>B.imgs[i].name;
 const pageData=i=>{ B.pd=B.pd||{}; if(i in B.pd) return B.pd[i];
   const P=B.store.pages||{}, n=pageKey(i), pg=P[n]||P[n.split("/").slice(1).join("/")]||null;
@@ -415,10 +421,12 @@ let sheetMode="";
 const isWide=()=>window.innerWidth>=900&&window.innerWidth>window.innerHeight;
 function layout(){ const w=isWide(); $("#rwrap").classList.toggle("wide",w); document.documentElement.style.setProperty("--side",Math.min(440,Math.max(320,window.innerWidth*.3))+"px"); }
 function openSheet(html,mode,pos){ sheetMode=mode;
+  if(!isWide()&&!$("#reader").hidden&&history.state?.koma==="reader") history.pushState({koma:"sheet"},"");
   const sh=$("#sheet"), top=pos==="top"&&!isWide();
   if(sh.classList.contains("top")!==top){ sh.style.transition="none"; sh.classList.remove("open"); sh.classList.toggle("top",top); void sh.offsetHeight; sh.style.transition=""; }
  $("#sheetIn").innerHTML=html; $("#sheet").classList.add("open"); $("#sheetIn").scrollTop=0; if(isWide()) requestAnimationFrame(drawOverlay); }
-function closeSheet(){ $("#sheet").classList.remove("open"); sheetMode=""; sel=-1; document.querySelectorAll(".hot.on,.tbox.hit").forEach(x=>x.classList.remove("on","hit")); if(isWide()) requestAnimationFrame(drawOverlay); }
+function closeSheet(fromBack){ if(!fromBack&&history.state?.koma==="sheet"&&$("#sheet").classList.contains("open")){ history.back(); return; }
+  $("#sheet").classList.remove("open"); sheetMode=""; sel=-1; document.querySelectorAll(".hot.on,.tbox.hit").forEach(x=>x.classList.remove("on","hit")); if(isWide()) requestAnimationFrame(drawOverlay); }
 /* 풀이 창을 손가락으로 밀어서 닫기: 아래 창은 내용이 맨 위일 때 아래로, 위 창은 내용이 맨 아래일 때 위로 */
 (()=>{ const sh=$("#sheet"), inn=$("#sheetIn"); let y0=null, dy=0, on=false, t0=0;
   const isTop=()=>sh.classList.contains("top");
