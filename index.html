@@ -92,7 +92,9 @@ h1,h2{margin:0}
 .sheet .in{overflow:auto;padding:6px max(16px,env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:10px}
 .wide .sheet{position:relative;transform:none;max-height:none;width:var(--side);border-radius:0;box-shadow:none;border-left:2px solid #2e323c}
 .wide .sheet:not(.open){display:none}
-.jp{font:500 1.25rem/1.8 var(--f-jp);overflow-wrap:anywhere}
+.jp{font:500 1.25rem/2.1 var(--f-jp);overflow-wrap:anywhere}
+.jp rt,.line rt{font-size:.5em;color:var(--ink-2);font-weight:500}
+.line>span:last-child{line-height:2}
 .ko{border-left:3px solid var(--accent);padding-left:10px;font-size:1.02rem}
 .toks{display:flex;flex-wrap:wrap;gap:4px 2px;align-items:flex-end;font:1.2rem var(--f-jp)}
 .tk{border:0;background:none;padding:1px 3px;border-radius:5px;line-height:1.3;display:inline-flex;flex-direction:column;align-items:center}
@@ -187,6 +189,33 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 let toastT; const toast=t=>{ const e=$("#toast"); e.textContent=t; e.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>e.hidden=true,3000); };
 const DAY=864e5;
 const ruby=(w,r)=>r&&r!==w&&/[㐀-鿿]/.test(w)?`<ruby>${esc(w)}<rt>${esc(r)}</rt></ruby>`:esc(w);
+
+/* ---------- 후리가나: 한자 부분에만 실제로 쓰인 형태의 읽기를 붙인다 ---------- */
+const KJ=/[㐀-鿿々〆ヶ]/;
+const hira=s=>String(s||"").replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
+const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+function surfReading(t){
+  if(t[5]) return hira(t[5]);                      // PC가 실제 형태의 읽기를 저장해 둔 경우
+  const [s,base,br]=t; if(!br) return "";
+  if(s===base) return hira(br);
+  // 활용형(落ち込ん ← 落ち込む): 기본형과 겹치는 앞부분의 읽기를 기본형 읽기에서 계산
+  let i=0; while(i<s.length&&i<base.length&&s[i]===base[i]) i++;
+  const rest=s.slice(i), tail=hira(base.slice(i)), r=hira(br);
+  if(KJ.test(rest)||!r.endsWith(tail)) return "";
+  return r.slice(0,r.length-tail.length)+hira(rest);
+}
+function furi(surf,read){
+  if(!read||!KJ.test(surf)) return esc(surf);
+  const runs=surf.match(/[㐀-鿿々〆ヶ]+|[^㐀-鿿々〆ヶ]+/g);
+  const m=hira(read).match(new RegExp("^"+runs.map(x=>KJ.test(x)?"(.+?)":"("+reEsc(hira(x))+")").join("")+"$"));
+  if(!m) return `<ruby>${esc(surf)}<rt>${esc(hira(read))}</rt></ruby>`;
+  return runs.map((x,i)=>KJ.test(x)?`<ruby>${esc(x)}<rt>${esc(m[i+1])}</rt></ruby>`:esc(x)).join("");
+}
+function lineHtml(b){
+  const toks=b.tokens||[];
+  if(settings.furi===false||!toks.length||toks.map(t=>t[0]).join("")!==String(b.jp||"").replace(/\s/g,"")) return esc(b.jp||"");
+  return toks.map(t=>settings.furiKnown===false&&vocab[t[1]]?.status==="known"?esc(t[0]):furi(t[0],surfReading(t))).join("");
+}
 
 /* ================= storage (IndexedDB: books, blobs, kv) ================= */
 const DB=new Promise((res,rej)=>{ const r=indexedDB.open("koma-reader",1);
@@ -376,7 +405,7 @@ $("#rWords").onclick=()=>{ if(sheetMode==="words") closeSheet(); else showBookWo
 function showLines(){ const pg=pageData(pi);
   if(!pg){ openSheet(`<h2>분석 결과가 없는 페이지</h2><p class="muted">PC 앱에서 이 폴더를 분석한 뒤 압축을 다시 만들어 주세요.</p>`,"lines"); return; }
   openSheet(`<div class="row"><h2 class="grow">이 페이지 대사 ${pg.blocks.length}개</h2><button class="btn small" data-close>닫기</button></div>${pg.summary?`<div class="ko">${esc(pg.summary)}</div>`:""}
-    <div class="lines">${pg.blocks.map((b,k)=>`<div class="line" data-k="${k}"><span class="no">${k+1}</span><span>${b.jp?esc(b.jp):'<span class="muted">(문장 없음)</span>'}${b.ko?`<div class="k">${esc(b.ko)}</div>`:""}</span></div>`).join("")}</div>`,"lines");
+    <div class="lines">${pg.blocks.map((b,k)=>`<div class="line" data-k="${k}"><span class="no">${k+1}</span><span>${b.jp?lineHtml(b):'<span class="muted">(문장 없음)</span>'}${b.ko?`<div class="k">${esc(b.ko)}</div>`:""}</span></div>`).join("")}</div>`,"lines");
   $("#sheetIn").querySelectorAll(".line").forEach(l=>l.onclick=()=>pickBlock(+l.dataset.k)); }
 $("#sheetIn").addEventListener("click",e=>{ if(e.target.closest("[data-close]")) closeSheet(); });
 const ST={none:"단어장에 없음",new:"새 단어",learning:"학습 중",known:"아는 단어"};
@@ -387,9 +416,9 @@ function pickBlock(k){
   document.querySelectorAll(".hot").forEach((h,i)=>h.classList.toggle("on",i===k)); document.querySelectorAll(".tbox").forEach(d=>d.classList.toggle("hit",+d.dataset.k===k));
   const toks=b.tokens||[];
   openSheet(`<div class="row"><button class="btn small" id="toLines">← 대사 목록</button><span class="muted grow">${k+1}번</span><button class="btn small" data-close>닫기</button></div>
-    ${b.jp?`<div class="jp">${esc(b.jp)} ${spk(b.jp)}</div>`:`<p class="muted">이 말풍선은 문장이 없습니다. PC 앱에서 '글자까지 읽기'로 분석해 주세요.</p>`}
+    ${b.jp?`<div class="jp">${lineHtml(b)} ${spk(b.jp)}</div>`:`<p class="muted">이 말풍선은 문장이 없습니다. PC 앱에서 '글자까지 읽기'로 분석해 주세요.</p>`}
     ${b.ko?`<div class="ko">${esc(b.ko)}</div>`:""}
-    ${toks.length?`<div class="toks">${toks.map((t,i)=>t[4]?`<button class="tk w ${vocab[t[1]]?.status==="known"?"known":vocab[t[1]]?"have":""}" data-i="${i}" type="button"><small>${esc(t[2]!==t[0]&&/[㐀-鿿]/.test(t[0])?t[2]:"")}</small>${esc(t[0])}</button>`:`<span class="tk f"><small></small>${esc(t[0])}</span>`).join("")}</div>
+    ${toks.length?`<div class="toks">${toks.map((t,i)=>t[4]?`<button class="tk w ${vocab[t[1]]?.status==="known"?"known":vocab[t[1]]?"have":""}" data-i="${i}" type="button"><small>${esc(KJ.test(t[0])?surfReading(t):"")}</small>${esc(t[0])}</button>`:`<span class="tk f"><small></small>${esc(t[0])}</span>`).join("")}</div>
       <div class="row"><button class="btn small" id="addAll">이 대사 단어 모두 담기</button></div>`:""}
     <div id="wcard"></div>`,"block");
   $("#toLines").onclick=showLines;
@@ -487,6 +516,8 @@ function renderMore(){ const el=$("#v-more");
     <div class="card"><b>읽기</b>
       <label class="row"><input type="checkbox" id="sRtl" ${settings.rtl?"checked":""}> 일본 만화 방향 (오른쪽 → 왼쪽으로 넘김)</label>
       <label class="row"><input type="checkbox" id="sTr" ${settings.showTr!==false?"checked":""}> 페이지를 열면 번역을 덮어서 보기</label>
+      <label class="row"><input type="checkbox" id="sFuri" ${settings.furi!==false?"checked":""}> 대사의 한자 위에 읽기(후리가나) 표시</label>
+      <label class="row"><input type="checkbox" id="sFuriK" ${settings.furiKnown!==false?"checked":""}> 아는 단어에도 후리가나 붙이기</label>
       <label class="row"><input type="checkbox" id="sSay" ${settings.autoSay?"checked":""}> 복습 카드를 뒤집으면 발음 읽기</label>
       <p class="muted">넘기기: 좌우로 밀기, 화면 가장자리 탭, 아래 ◀ ▶. 가운데를 탭하면 메뉴가 숨겨집니다.</p></div>
     <div class="card"><b>단어장 옮기기</b><p class="muted">단어장과 복습 기록은 이 기기 안에만 저장됩니다. 다른 기기(폰 ↔ 패드)와 맞추려면 파일로 내보내고 가져오세요. 가져오면 기존 기록과 합칩니다.</p>
@@ -497,6 +528,8 @@ function renderMore(){ const el=$("#v-more");
   $("#sRtl").onchange=e=>{ settings.rtl=e.target.checked; saveSettings(); };
   $("#sTr").onchange=e=>{ settings.showTr=e.target.checked; saveSettings(); };
   $("#sSay").onchange=e=>{ settings.autoSay=e.target.checked; saveSettings(); };
+  $("#sFuri").onchange=e=>{ settings.furi=e.target.checked; saveSettings(); };
+  $("#sFuriK").onchange=e=>{ settings.furiKnown=e.target.checked; saveSettings(); };
   const dl=(name,text,type)=>{ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type})); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000); };
   $("#exV").onclick=()=>dl(`koma-vocab-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({version:1,words:vocab}),"application/json");
   $("#exA").onclick=()=>{ const rows=Object.values(vocab).map(w=>[w.lemma,w.reading,w.meaning,(w.examples||[])[0]?.jp||""].map(x=>String(x||"").replace(/[\t\n]/g," ")).join("\t")); dl("koma-anki.txt","#separator:tab\n#columns:단어\t읽기\t뜻\t예문\n"+rows.join("\n"),"text/plain"); };
