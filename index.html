@@ -88,6 +88,11 @@ h1,h2{margin:0}
 /* study sheet */
 .sheet{position:absolute;left:0;right:0;bottom:0;max-height:62%;background:var(--panel);color:var(--ink);border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.35);z-index:8;display:flex;flex-direction:column;transform:translateY(105%);transition:transform .22s}
 .sheet.open{transform:none}
+/* 아래쪽 대사를 누르면 풀이 창이 위에서 내려온다 (누른 대사를 가리지 않게) */
+.sheet.top{top:0;bottom:auto;border-radius:0 0 16px 16px;box-shadow:0 6px 24px rgba(0,0,0,.35);transform:translateY(-105%);flex-direction:column-reverse}
+.sheet.top.open{transform:none}
+.sheet.top .grab{margin:2px 0 8px}
+.sheet.top .in{padding-top:calc(10px + env(safe-area-inset-top));padding-bottom:6px}
 .sheet .grab{align-self:center;width:44px;height:5px;border-radius:99px;background:var(--rule);margin:8px 0 2px}
 .sheet .in{overflow:auto;padding:6px max(16px,env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:10px}
 .wide .sheet{position:relative;transform:none;max-height:none;width:var(--side);border-radius:0;box-shadow:none;border-left:2px solid #2e323c}
@@ -418,9 +423,12 @@ function snapBalloons(blocks){
 let sheetMode="";
 const isWide=()=>window.innerWidth>=900&&window.innerWidth>window.innerHeight;
 function layout(){ const w=isWide(); $("#rwrap").classList.toggle("wide",w); document.documentElement.style.setProperty("--side",Math.min(440,Math.max(320,window.innerWidth*.3))+"px"); }
-function openSheet(html,mode){ sheetMode=mode; $("#sheetIn").innerHTML=html; $("#sheet").classList.add("open"); $("#sheetIn").scrollTop=0; if(isWide()) requestAnimationFrame(drawOverlay); }
+function openSheet(html,mode,pos){ sheetMode=mode;
+  const sh=$("#sheet"), top=pos==="top"&&!isWide();
+  if(sh.classList.contains("top")!==top){ sh.style.transition="none"; sh.classList.remove("open"); sh.classList.toggle("top",top); void sh.offsetHeight; sh.style.transition=""; }
+ $("#sheetIn").innerHTML=html; $("#sheet").classList.add("open"); $("#sheetIn").scrollTop=0; if(isWide()) requestAnimationFrame(drawOverlay); }
 function closeSheet(){ $("#sheet").classList.remove("open"); sheetMode=""; sel=-1; document.querySelectorAll(".hot.on,.tbox.hit").forEach(x=>x.classList.remove("on","hit")); if(isWide()) requestAnimationFrame(drawOverlay); }
-let sy=null; $("#sheet .grab").addEventListener("pointerdown",e=>{ sy=e.clientY; }); window.addEventListener("pointerup",e=>{ if(sy!==null&&e.clientY-sy>40) closeSheet(); sy=null; });
+let sy=null; $("#sheet .grab").addEventListener("pointerdown",e=>{ sy=e.clientY; }); window.addEventListener("pointerup",e=>{ if(sy!==null&&($("#sheet").classList.contains("top")?sy-e.clientY>40:e.clientY-sy>40)) closeSheet(); sy=null; });
 $("#rList").onclick=()=>{ if(sheetMode==="lines") closeSheet(); else showLines(); };
 $("#rWords").onclick=()=>{ if(sheetMode==="words") closeSheet(); else showBookWords(); };
 function showLines(){ const pg=pageData(pi);
@@ -432,6 +440,7 @@ $("#sheetIn").addEventListener("click",e=>{ if(e.target.closest("[data-close]"))
 const ST={none:"단어장에 없음",new:"새 단어",learning:"학습 중",known:"아는 단어"};
 const meanOf=l=>(vocab[l]&&vocab[l].meaning)||(B&&B.dict[l]&&B.dict[l].meaning)||"";
 const noteOf=l=>(vocab[l]&&vocab[l].note)||(B&&B.dict[l]&&B.dict[l].note)||"";
+function sheetPos(b){ const r=img.getBoundingClientRect(); const cy=r.top+(b.box[1]+b.box[3])/2000*r.height; return cy>window.innerHeight*.5?"top":"bottom"; }
 function pickBlock(k){
   const pg=pageData(pi), b=pg.blocks[k]; sel=k;
   document.querySelectorAll(".hot").forEach((h,i)=>h.classList.toggle("on",i===k)); document.querySelectorAll(".tbox").forEach(d=>d.classList.toggle("hit",+d.dataset.k===k));
@@ -441,7 +450,7 @@ function pickBlock(k){
     ${b.ko?`<div class="ko">${esc(b.ko)}</div>`:""}
     ${toks.length?`<div class="toks">${toks.map((t,i)=>t[4]?`<button class="tk w ${vocab[t[1]]?.status==="known"?"known":vocab[t[1]]?"have":""}" data-i="${i}" type="button"><small>${esc(KJ.test(t[0])?surfReading(t):"")}</small>${esc(t[0])}</button>`:`<span class="tk f"><small></small>${esc(t[0])}</span>`).join("")}</div>
       <div class="row"><button class="btn small" id="addAll">이 대사 단어 모두 담기</button></div>`:""}
-    <div id="wcard"></div>`,"block");
+    <div id="wcard"></div>`,"block",sheetPos(b));
   $("#toLines").onclick=showLines;
   $("#sheetIn").querySelectorAll(".tk.w").forEach(el=>el.onclick=()=>{ $("#sheetIn").querySelectorAll(".tk.w").forEach(x=>x.classList.remove("on")); el.classList.add("on"); wordCard(toks[+el.dataset.i],b.jp); });
   const aa=$("#addAll"); if(aa) aa.onclick=()=>{ const seen=new Set(); toks.forEach(t=>{ if(t[4]&&!seen.has(t[1])){ seen.add(t[1]); addWord(t,b.jp); } }); toast(seen.size+"개를 담았습니다."); pickBlock(k); };
