@@ -26,7 +26,7 @@
 html,body{height:100%;margin:0}
 body{background:var(--paper);color:var(--ink);font:15px/1.55 var(--f-ui);overscroll-behavior:none}
 button,input,select{font:inherit;color:inherit}
-.btn{font-weight:700;border:2px solid var(--ink);background:var(--panel);border-radius:8px;padding:8px 14px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.btn{text-decoration:none;font-weight:700;border:2px solid var(--ink);background:var(--panel);border-radius:8px;padding:8px 14px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .btn.small{padding:4px 10px;font-size:.85rem;border-width:1.5px}
 .btn.ghost{border-color:transparent;background:transparent}
@@ -433,7 +433,7 @@ function wordCard(t,sent){
   const [surf,lemma,reading,pos]=t, v=vocab[lemma], m=meanOf(lemma), note=noteOf(lemma), cnt=bookWords().find(w=>w.lemma===lemma);
   $("#wcard").innerHTML=`<div class="card"><div class="lemma">${ruby(lemma,reading)} ${spk(reading||lemma)}</div>
     <div class="row"><span class="pos">${esc(pos)}</span><span class="st ${v?v.status:"none"}">${ST[v?v.status:"none"]}</span>${cnt?`<span class="muted">이 책에서 ${cnt.count}번</span>`:""}${surf!==lemma?`<span class="muted">여기서는 「${esc(surf)}」</span>`:""}</div>
-    <input type="text" id="mean" value="${esc(m)}" placeholder="뜻 적기" aria-label="뜻">${note?`<p class="muted">💡 ${esc(note)}</p>`:""}
+    <div class="row"><input type="text" id="mean" class="grow" value="${esc(m)}" placeholder="뜻 적기" aria-label="뜻" style="width:auto;flex:1 1 140px"><a class="btn small" href="https://ja.dict.naver.com/#/search?query=${encodeURIComponent(lemma)}" target="_blank" rel="noopener" title="인터넷이 될 때 네이버 일본어 사전에서 찾습니다">🔎 사전</a></div>${m?"":`<p class="muted">PC 앱에서 '단어 뜻 채우기'를 켜고 분석한 뒤 압축을 다시 만들면 뜻이 미리 채워집니다.</p>`}${note?`<p class="muted">💡 ${esc(note)}</p>`:""}
     <div class="row">${v?`<button class="btn small" id="kn">${v.status==="known"?"다시 공부하기":"아는 단어로"}</button><button class="btn small" id="rm">단어장에서 빼기</button>`:`<button class="btn small primary" id="ad">단어장에 담기</button><button class="btn small" id="ak">이미 아는 단어</button>`}</div></div>`;
   $("#mean").onchange=e=>{ if(vocab[lemma]){ vocab[lemma].meaning=e.target.value.trim(); saveVocab(); } };
   const re=()=>{ const k=sel; pickBlock(k); const i=(pageData(pi).blocks[k].tokens||[]).findIndex(x=>x[1]===lemma&&x[4]); const el=$(`#sheetIn .tk.w[data-i="${i}"]`); if(el){ $("#sheetIn").querySelectorAll(".tk.w").forEach(x=>x.classList.remove("on")); el.classList.add("on"); wordCard(t,sent); } };
