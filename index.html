@@ -308,7 +308,10 @@ async function openBook(id){
 }
 $("#rBack").onclick=()=>{ $("#reader").hidden=true; $("#main").hidden=false; B=null; urls.forEach(u=>URL.revokeObjectURL(u)); urls.clear(); loadShelf(); counts(); };
 const pageKey=i=>B.imgs[i].name;
-const pageData=i=>{ const P=B.store.pages||{}, n=pageKey(i); return P[n]||P[n.split("/").slice(1).join("/")]||null; };
+const pageData=i=>{ B.pd=B.pd||{}; if(i in B.pd) return B.pd[i];
+  const P=B.store.pages||{}, n=pageKey(i), pg=P[n]||P[n.split("/").slice(1).join("/")]||null;
+  // PC에서 숨긴 말풍선(쓸모없는 조각)은 리더에서 빼고 보여 준다
+  return B.pd[i]=pg?{...pg,blocks:(pg.blocks||[]).filter(x=>!x.hidden)}:null; };
 async function urlFor(i){ if(urls.has(i)) return urls.get(i); const e=B.imgs[i]; const ext=e.name.split(".").pop().toLowerCase();
   const b=await e.async("blob"); const u=URL.createObjectURL(new Blob([b],{type:ext==="png"?"image/png":ext==="webp"?"image/webp":"image/jpeg"})); urls.set(i,u);
   for(const [k,v] of urls) if(Math.abs(k-pi)>2){ URL.revokeObjectURL(v); urls.delete(k); } return u; }
