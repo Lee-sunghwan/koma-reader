@@ -77,7 +77,9 @@ h1,h2{margin:0}
 .pg{position:relative;max-width:100%;max-height:100%;line-height:0}
 .pg img{display:block;max-width:100vw;max-height:100vh;max-height:100dvh;width:auto;height:auto;user-select:none;-webkit-user-drag:none}
 .wide .pg img{max-width:calc(100vw - var(--side))}
-#reader.side-open .rbar{right:var(--side)} /* 가로 모드: 페이지 막대(슬라이더)를 풀이 칸이 가리지 않게 */
+/* 가로 모드: 페이지 막대(슬라이더)는 화면 끝까지 그대로 두고, 풀이 칸은 그 위에서 끝나게 */
+#reader.side-open .rbar:not(.bottom){right:var(--side)}
+.wide .sheet{margin-bottom:var(--barH,52px)}
 .tlayer{position:absolute;inset:0}
 .tbox{position:absolute;box-sizing:border-box;background:var(--ov-bg);color:var(--ov-ink);display:flex;align-items:center;justify-content:center;text-align:center;font:600 14px/1.25 var(--f-ui);overflow:hidden;word-break:keep-all;overflow-wrap:anywhere;border-radius:30%/25%}
 .tbox.oval{border-radius:50%}.tbox.rect{border-radius:3px}
@@ -425,7 +427,8 @@ function snapBalloons(blocks){
 let sheetMode="";
 const isWide=()=>window.innerWidth>window.innerHeight&&window.innerWidth>=600; // 휴대폰 가로 화면도 풀이는 옆 칸에
 function layout(){ const w=isWide(); $("#rwrap").classList.toggle("wide",w); document.documentElement.style.setProperty("--side",Math.min(440,Math.max(280,window.innerWidth*(window.innerWidth<900?.42:.3)))+"px"); sideOpen(); }
-function sideOpen(){ $("#reader").classList.toggle("side-open",isWide()&&$("#sheet").classList.contains("open")); }
+function sideOpen(){ $("#reader").classList.toggle("side-open",isWide()&&$("#sheet").classList.contains("open"));
+  const bar=document.querySelector("#reader .rbar.bottom"); if(bar&&bar.offsetHeight) document.documentElement.style.setProperty("--barH",bar.offsetHeight+"px"); }
 function openSheet(html,mode,pos){ sheetMode=mode;
   if(!isWide()&&!$("#reader").hidden&&history.state?.koma==="reader") history.pushState({koma:"sheet"},"");
   const sh=$("#sheet"), top=pos==="top"&&!isWide();
