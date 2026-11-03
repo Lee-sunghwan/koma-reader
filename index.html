@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#15171c">
+<title>코마 리더</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+/* Layout: a bookshelf screen, then a full-screen page reader with a slide-up study sheet (side panel on wide tablets). Same inked-manga look as the PC app. */
+:root{
+  --paper:#f6f7f9; --panel:#fff; --ink:#15171c; --ink-2:#4a4f5c; --rule:#d9dce3; --tone:#c9cdd6;
+  --accent:#2747c9; --accent-ink:#fff; --mark:#ffe066; --mark-ink:#15171c; --good:#1f8a4c; --warn:#b7791f; --bad:#c2410c; --chip:#eceef3;
+  --ov-bg:#ffffff; --ov-ink:#111111; /* translation sits on the printed page: paper-white in both themes */
+  --f-jp:"Hiragino Sans","Noto Sans JP","Noto Sans CJK JP","Yu Gothic","Meiryo",sans-serif;
+  --f-ui:"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --paper:#121419; --panel:#1b1e25; --ink:#eef0f4; --ink-2:#a3a9b8; --rule:#2e323c; --tone:#353a46;
+  --accent:#7f96ff; --accent-ink:#0d1020; --mark:#e9c63f; --good:#4ccb82; --warn:#e0a84a; --bad:#f08a5d; --chip:#262a33; color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.55 var(--f-ui);overscroll-behavior:none}
+button,input,select{font:inherit;color:inherit}
+.btn{font-weight:700;border:2px solid var(--ink);background:var(--panel);border-radius:8px;padding:8px 14px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{padding:4px 10px;font-size:.85rem;border-width:1.5px}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn:disabled{opacity:.45}
+.btn:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input[type=text]{background:var(--paper);border:1.5px solid var(--rule);border-radius:8px;padding:8px 10px;width:100%}
+.muted{color:var(--ink-2);font-size:.88rem;margin:0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grow{flex:1 1 auto;min-width:0}
+h1,h2{margin:0}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:9px 14px;border-radius:8px;font-size:.9rem;z-index:50;max-width:calc(100% - 32px);text-align:center}
+
+/* ---------- app shell ---------- */
+.screen{position:fixed;inset:0;display:flex;flex-direction:column}
+.bar{display:flex;gap:8px;align-items:center;padding:calc(10px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 10px max(14px,env(safe-area-inset-left));background:radial-gradient(circle,var(--tone) 1.2px,transparent 1.6px) 0 0/7px 7px,var(--panel);border-bottom:3px solid var(--ink)}
+.logo{font:900 1.35rem/1.1 var(--f-jp);background:var(--panel);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);padding:1px 8px;letter-spacing:.02em}
+.tabs{display:flex;border-top:2px solid var(--ink);background:var(--panel);padding-bottom:env(safe-area-inset-bottom)}
+.tabs button{flex:1;border:0;background:none;padding:10px 4px;font-weight:700;color:var(--ink-2);display:flex;flex-direction:column;align-items:center;gap:1px;font-size:.8rem}
+.tabs button span{font-size:1.25rem;line-height:1}
+.tabs button[aria-selected="true"]{color:var(--accent)}
+.body{flex:1;overflow:auto;padding:16px max(16px,env(safe-area-inset-right)) 24px max(16px,env(safe-area-inset-left))}
+.n{font-size:.7rem;background:var(--ink);color:var(--paper);border-radius:99px;padding:0 6px;font-variant-numeric:tabular-nums}
+
+/* ---------- shelf ---------- */
+.shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:16px}
+.book{background:var(--panel);border:2px solid var(--ink);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer;min-width:0}
+.book .cover{aspect-ratio:3/4;background:var(--chip);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.book .cover img{width:100%;height:100%;object-fit:cover}
+.book .meta{padding:8px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.book .t{font-weight:700;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.book .s{font-size:.75rem;color:var(--ink-2)}
+.prog{height:4px;background:var(--chip);border-radius:99px;overflow:hidden}.prog i{display:block;height:100%;background:var(--accent)}
+.empty{text-align:center;padding:40px 12px;color:var(--ink-2);display:flex;flex-direction:column;gap:12px;align-items:center}
+.empty b{font-size:1.15rem;color:var(--ink)}
+.steps{text-align:left;max-width:460px;margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+
+/* ---------- reader ---------- */
+#reader{background:#0d0e11;color:#eef0f4;z-index:20}
+#reader .rbar{display:flex;gap:6px;align-items:center;padding:calc(6px + env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) 6px max(10px,env(safe-area-inset-left));background:rgba(13,14,17,.92);position:absolute;left:0;right:0;top:0;z-index:5;transition:transform .2s}
+#reader .rbar.bottom{top:auto;bottom:0;padding:6px max(10px,env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
+#reader.chrome-off .rbar{transform:translateY(-110%)}#reader.chrome-off .rbar.bottom{transform:translateY(110%)}
+#reader .rbtn{border:1.5px solid #3a3f4b;background:#1b1e25;color:#eef0f4;border-radius:8px;padding:6px 10px;font-weight:700;font-size:.85rem;white-space:nowrap}
+#reader .rbtn.on{background:#7f96ff;color:#0d1020;border-color:#7f96ff}
+#reader .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.85rem;color:#a3a9b8}
+#reader input[type=range]{flex:1;min-width:0;accent-color:#7f96ff}
+.rwrap{flex:1;display:flex;min-height:0}
+.stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:pan-y pinch-zoom;position:relative;min-width:0}
+.pg{position:relative;max-width:100%;max-height:100%;line-height:0}
+.pg img{display:block;max-width:100vw;max-height:100vh;max-height:100dvh;width:auto;height:auto;user-select:none;-webkit-user-drag:none}
+.wide .pg img{max-width:calc(100vw - var(--side))}
+.tlayer{position:absolute;inset:0}
+.tbox{position:absolute;box-sizing:border-box;background:var(--ov-bg);color:var(--ov-ink);display:flex;align-items:center;justify-content:center;text-align:center;font:600 14px/1.25 var(--f-ui);overflow:hidden;word-break:keep-all;overflow-wrap:anywhere;border-radius:30%/25%}
+.tbox.oval{border-radius:50%}.tbox.rect{border-radius:3px}
+.tbox.hit{outline:3px solid #7f96ff}
+.tr-off .tbox{display:none}
+.hot{position:absolute;border:2px solid transparent;border-radius:6px}
+.hot.on{border-color:#7f96ff;background:rgba(127,150,255,.15)}
+.show-hot .hot{border-color:rgba(127,150,255,.55)}
+/* study sheet */
+.sheet{position:absolute;left:0;right:0;bottom:0;max-height:62%;background:var(--panel);color:var(--ink);border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.35);z-index:8;display:flex;flex-direction:column;transform:translateY(105%);transition:transform .22s}
+.sheet.open{transform:none}
+.sheet .grab{align-self:center;width:44px;height:5px;border-radius:99px;background:var(--rule);margin:8px 0 2px}
+.sheet .in{overflow:auto;padding:6px max(16px,env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:10px}
+.wide .sheet{position:relative;transform:none;max-height:none;width:var(--side);border-radius:0;box-shadow:none;border-left:2px solid #2e323c}
+.wide .sheet:not(.open){display:none}
+.jp{font:500 1.25rem/1.8 var(--f-jp);overflow-wrap:anywhere}
+.ko{border-left:3px solid var(--accent);padding-left:10px;font-size:1.02rem}
+.toks{display:flex;flex-wrap:wrap;gap:4px 2px;align-items:flex-end;font:1.2rem var(--f-jp)}
+.tk{border:0;background:none;padding:1px 3px;border-radius:5px;line-height:1.3;display:inline-flex;flex-direction:column;align-items:center}
+.tk small{font-size:.55em;color:var(--ink-2);min-height:1.1em}
+.tk.w{border-bottom:2px solid var(--rule)}
+.tk.w.on{background:var(--mark);color:var(--mark-ink)}
+.tk.w.have{border-bottom-color:var(--accent)}.tk.w.known{border-bottom-color:var(--good)}
+.tk.f{color:var(--ink-2)}
+.card{border:1.5px solid var(--rule);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.lemma{font:700 1.5rem/1.3 var(--f-jp)}
+.lemma rt,.w rt{font-size:.5em;color:var(--ink-2);font-weight:500}
+.pos{font-size:.72rem;background:var(--chip);border-radius:4px;padding:0 6px;color:var(--ink-2);font-weight:700}
+.st{font-size:.72rem;border-radius:99px;padding:0 8px;font-weight:700;border:1.5px solid currentColor}
+.st.new{color:var(--accent)}.st.learning{color:var(--warn)}.st.known{color:var(--good)}.st.none{color:var(--ink-2)}
+.spk{border:1.5px solid var(--rule);background:var(--panel);border-radius:99px;width:2.1em;height:2.1em;padding:0;line-height:1;font-size:.9rem;vertical-align:middle}
+.lines{display:flex;flex-direction:column;border-top:1px solid var(--rule)}
+.line{display:grid;grid-template-columns:1.6em minmax(0,1fr);gap:8px;padding:8px 2px;border-bottom:1px solid var(--rule);font-family:var(--f-jp)}
+.line .no{color:var(--ink-2);font:700 .85rem var(--f-ui)}
+.line .k{font:.92rem var(--f-ui);margin-top:2px}
+
+/* ---------- lists ---------- */
+.list{display:flex;flex-direction:column;border-top:1px solid var(--rule)}
+.it{display:grid;grid-template-columns:2.6em minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 2px;border-bottom:1px solid var(--rule)}
+.it .c{font-weight:700;color:var(--ink-2);text-align:right;font-variant-numeric:tabular-nums}
+.it .w{font:700 1.15rem/1.3 var(--f-jp)}
+.it .m{font-size:.88rem;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.it input{padding:4px 8px;font-size:.9rem}
+
+/* ---------- review ---------- */
+.rv{display:flex;flex-direction:column;align-items:center;gap:22px;padding:10px 0 30px}
+.bubble{position:relative;background:var(--panel);border:3px solid var(--ink);border-radius:46% 54% 50% 50%/56% 50% 50% 44%;width:min(100%,520px);min-height:250px;padding:40px 30px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center}
+.bubble::after{content:"";position:absolute;bottom:-26px;left:22%;width:34px;height:34px;background:var(--panel);border-right:3px solid var(--ink);border-bottom:3px solid var(--ink);transform:skewX(28deg) rotate(38deg);border-radius:0 0 6px 0}
+.bubble .big{font:700 clamp(2.2rem,10vw,3.4rem)/1.2 var(--f-jp)}
+.bubble .big.long{font-size:1.3rem;line-height:1.7;font-weight:500}
+.bubble .big rt{font-size:.38em;color:var(--ink-2);font-weight:500}
+.grades{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;width:min(100%,520px)}
+.grades button{font-weight:700;border:2px solid var(--ink);background:var(--panel);border-radius:8px;padding:12px 4px;display:flex;flex-direction:column;align-items:center;line-height:1.25}
+.grades small{font-weight:400;font-size:.74rem;color:var(--ink-2)}
+.grades .g1{border-color:var(--bad)}.grades .g4{border-color:var(--good)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<!-- ============ main screen (shelf / words / vocab / review) ============ -->
+<div class="screen" id="main">
+  <div class="bar"><span class="logo">コマ</span><h1 class="grow" style="font-size:1.05rem">코마 리더</h1>
+    <button class="btn small primary" id="addBook">📦 압축 추가</button>
+    <input type="file" id="fileIn" accept=".zip,application/zip,application/x-zip-compressed,application/octet-stream" hidden></div>
+  <div class="body">
+    <section id="v-shelf"></section>
+    <section id="v-vocab" hidden></section>
+    <section id="v-review" hidden></section>
+    <section id="v-more" hidden></section>
+  </div>
+  <nav class="tabs">
+    <button data-v="shelf" aria-selected="true"><span>📚</span>책장</button>
+    <button data-v="vocab" aria-selected="false"><span>📒</span>단어장 <b class="n" id="nVocab">0</b></button>
+    <button data-v="review" aria-selected="false"><span>🃏</span>복습 <b class="n" id="nDue">0</b></button>
+    <button data-v="more" aria-selected="false"><span>⚙️</span>설정</button>
+  </nav>
+</div>
+
+<!-- ============ reader ============ -->
+<div class="screen" id="reader" hidden>
+  <div class="rbar">
+    <button class="rbtn" id="rBack" aria-label="책장으로">←</button>
+    <span class="ttl" id="rTitle"></span>
+    <button class="rbtn" id="rTr">번역</button>
+    <button class="rbtn" id="rList">대사</button>
+    <button class="rbtn" id="rWords">단어</button>
+  </div>
+  <div class="rwrap" id="rwrap">
+    <div class="stage" id="stage"><div class="pg" id="pg"><img id="img" alt="만화 페이지"><div class="tlayer" id="tlayer"></div></div></div>
+    <div class="sheet" id="sheet"><div class="grab"></div><div class="in" id="sheetIn"></div></div>
+  </div>
+  <div class="rbar bottom">
+    <button class="rbtn" id="rL" aria-label="다음 페이지">◀</button>
+    <span id="rNum" style="font-variant-numeric:tabular-nums;font-size:.85rem;min-width:4.5em;text-align:center">0/0</span>
+    <input type="range" id="rRange" min="1" max="1" value="1" aria-label="페이지 이동">
+    <button class="rbtn" id="rR" aria-label="이전 페이지">▶</button>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="vendor/jszip.min.js"></script>
+<script>
+(() => {
+"use strict";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let toastT; const toast=t=>{ const e=$("#toast"); e.textContent=t; e.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>e.hidden=true,3000); };
+const DAY=864e5;
+const ruby=(w,r)=>r&&r!==w&&/[㐀-鿿]/.test(w)?`<ruby>${esc(w)}<rt>${esc(r)}</rt></ruby>`:esc(w);
+
+/* ================= storage (IndexedDB: books, blobs, kv) ================= */
+const DB=new Promise((res,rej)=>{ const r=indexedDB.open("koma-reader",1);
+  r.onupgradeneeded=()=>{ const d=r.result; d.createObjectStore("books",{keyPath:"id"}); d.createObjectStore("blobs"); d.createObjectStore("kv"); };
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+const tx=async(store,mode,fn)=>{ const d=await DB; return new Promise((res,rej)=>{ const t=d.transaction(store,mode), s=t.objectStore(store); const out=fn(s); t.oncomplete=()=>res(out&&"result" in out?out.result:out); t.onerror=()=>rej(t.error); }); };
+const idb={ get:(s,k)=>tx(s,"readonly",o=>o.get(k)), all:s=>tx(s,"readonly",o=>o.getAll()), put:(s,v,k)=>tx(s,"readwrite",o=>k===undefined?o.put(v):o.put(v,k)), del:(s,k)=>tx(s,"readwrite",o=>o.delete(k)) };
+try{ navigator.storage?.persist?.(); }catch(e){}
+
+let vocab={}, settings={rtl:true,showTr:true};
+let saveT; function saveVocab(){ clearTimeout(saveT); saveT=setTimeout(()=>idb.put("kv",vocab,"vocab").catch(()=>toast("단어장을 저장하지 못했습니다.")),250); counts(); }
+const saveSettings=()=>idb.put("kv",settings,"settings").catch(()=>{});
+
+/* ================= speech ================= */
+let voice=null; const pickV=()=>{ try{ const v=speechSynthesis.getVoices().filter(v=>/^ja/i.test(v.lang)); voice=v.find(v=>v.localService)||v[0]||null; }catch(e){} };
+try{ pickV(); speechSynthesis.addEventListener("voiceschanged",pickV); }catch(e){}
+let lastSay="", lastT=0;
+function say(t){ if(!t) return; try{ const slow=t===lastSay&&Date.now()-lastT<3000; lastSay=t; lastT=Date.now(); speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(t); u.lang="ja-JP"; if(voice) u.voice=voice; u.rate=slow?.65:.95; speechSynthesis.speak(u); if(!voice) toast("일본어 음성이 없으면 설정 → 언어 → TTS에서 일본어를 추가해 주세요."); }catch(e){ toast("이 기기는 음성 읽기를 지원하지 않습니다."); } }
+const spk=t=>t?`<button class="spk" type="button" data-say="${esc(t)}" aria-label="발음 듣기">🔊</button>`:"";
+document.addEventListener("click",e=>{ const b=e.target.closest("[data-say]"); if(b){ e.stopPropagation(); say(b.dataset.say); } },true);
+
+/* ================= shelf ================= */
+let books=[];
+async function loadShelf(){ books=(await idb.all("books")).sort((a,b)=>(b.opened||b.added)-(a.opened||a.added)); renderShelf(); }
+function renderShelf(){
+  const el=$("#v-shelf");
+  if(!books.length){ el.innerHTML=`<div class="empty"><b>책장이 비어 있습니다</b>
+    <ol class="steps"><li>PC의 코마 단어장 로컬 앱에서 만화 폴더를 분석하고 <b>📦 휴대폰용 압축 만들기</b>를 누릅니다.</li>
+    <li>생긴 <b>.koma.zip</b> 파일을 이 기기로 가져옵니다. OneDrive 앱에서 "오프라인 사용"으로 받아 두면 편합니다.</li>
+    <li>위의 <b>📦 압축 추가</b>로 그 파일을 고르면 책장에 꽂힙니다. 한 번 추가하면 인터넷 없이 읽을 수 있습니다.</li></ol>
+    <button class="btn primary" onclick="document.getElementById('fileIn').click()">📦 압축 추가</button></div>`; return; }
+  el.innerHTML=`<div class="shelf">${books.map(b=>`<div class="book" data-id="${esc(b.id)}" tabindex="0" role="button" aria-label="${esc(b.name)} 열기">
+    <div class="cover">${b.cover?`<img alt="" src="${b.cover}">`:"📖"}</div>
+    <div class="meta"><span class="t">${esc(b.name)}</span><span class="s">${(b.pos||0)+1}/${b.pages}쪽 · ${b.mb}MB${b.translated?" · 번역 "+b.translated+"쪽":""}</span>
+    <div class="prog"><i style="width:${Math.round(((b.pos||0)+1)/b.pages*100)}%"></i></div></div></div>`).join("")}</div>
+    <p class="muted" style="margin-top:14px">책을 길게 누르면 지울 수 있습니다. 압축 파일 원본은 지워지지 않고, 이 앱에 넣어 둔 사본만 지워집니다.</p>`;
+  el.querySelectorAll(".book").forEach(c=>{ let lp;
+    c.onclick=()=>openBook(c.dataset.id);
+    c.onkeydown=e=>{ if(e.key==="Enter") openBook(c.dataset.id); };
+    c.oncontextmenu=e=>{ e.preventDefault(); askDelete(c.dataset.id); };
+    c.addEventListener("touchstart",()=>{ lp=setTimeout(()=>askDelete(c.dataset.id),650); },{passive:true});
+    c.addEventListener("touchend",()=>clearTimeout(lp)); c.addEventListener("touchmove",()=>clearTimeout(lp),{passive:true}); });
+}
+function askDelete(id){ const b=books.find(x=>x.id===id); if(!b) return;
+  const el=$("#v-shelf"); const bar=document.createElement("div"); bar.className="card"; bar.style.marginBottom="14px";
+  bar.innerHTML=`<b>「${esc(b.name)}」을 책장에서 지울까요?</b><p class="muted">단어장과 복습 기록은 그대로 남습니다.</p><div class="row"><button class="btn small primary" id="delYes">지우기</button><button class="btn small" id="delNo">취소</button></div>`;
+  el.prepend(bar); $("#delNo").onclick=()=>bar.remove();
+  $("#delYes").onclick=async()=>{ await idb.del("books",id); await idb.del("blobs",id); toast("지웠습니다."); loadShelf(); }; }
+$("#addBook").onclick=()=>$("#fileIn").click();
+$("#fileIn").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) addBook(f); };
+async function addBook(file){
+  toast("압축을 읽는 중…");
+  try{
+    const z=await JSZip.loadAsync(file);
+    const imgs=listImages(z); if(!imgs.length){ toast("이미지가 없는 압축입니다."); return; }
+    let store=null; const bj=z.file(/(^|\/)koma-boxes\.json$/i)[0]; if(bj){ try{ store=JSON.parse(await bj.async("string")); }catch(_){} }
+    const name=file.name.replace(/(\.koma)?\.zip$/i,"");
+    const id=name+"·"+file.size;
+    const translated=store?Object.values(store.pages||{}).filter(p=>(p.blocks||[]).some(b=>b.ko)).length:0;
+    const cover=await thumb(await imgs[0].async("blob"));
+    await idb.put("blobs",file,id);
+    const old=books.find(b=>b.id===id);
+    await idb.put("books",{id,name,pages:imgs.length,mb:Math.round(file.size/1e5)/10,added:old?.added||Date.now(),opened:Date.now(),pos:old?.pos||0,translated,cover,hasData:!!store});
+    await mergePcVocab(z);
+    await loadShelf(); toast(`「${name}」을 책장에 넣었습니다${store?"":" (PC 분석 결과 없음)"}.`);
+    if(!store) toast("이 압축에는 PC 분석 결과가 없어 그림만 볼 수 있습니다.");
+  }catch(err){ toast("압축을 열지 못했습니다: "+(err.message||err)); }
+}
+function listImages(z){ return Object.values(z.files).filter(e=>!e.dir&&!/(^|\/)(__MACOSX|\.)/.test(e.name)&&/\.(jpe?g|png|webp|gif|avif|bmp)$/i.test(e.name)).sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true})); }
+async function thumb(blob){ try{ const bm=await createImageBitmap(blob); const k=240/bm.width, c=document.createElement("canvas"); c.width=240; c.height=Math.round(bm.height*k); c.getContext("2d").drawImage(bm,0,0,c.width,c.height); return c.toDataURL("image/jpeg",.7); }catch(e){ return ""; } }
+
+/* ================= reader ================= */
+let B=null; // {id,name,zip,imgs,store,dict}
+let pi=0, urls=new Map(), sel=-1, trOn=true;
+async function openBook(id){
+  const meta=books.find(b=>b.id===id); const file=await idb.get("blobs",id);
+  if(!meta||!file){ toast("책 파일을 찾지 못했습니다. 다시 추가해 주세요."); return; }
+  toast("여는 중…");
+  try{
+    const zip=await JSZip.loadAsync(file); const imgs=listImages(zip);
+    let store={pages:{}}, dict={};
+    const bj=zip.file(/(^|\/)koma-boxes\.json$/i)[0]; if(bj) try{ store=JSON.parse(await bj.async("string")); }catch(_){}
+    const dj=zip.file(/(^|\/)koma-dict\.json$/i)[0]; if(dj) try{ dict=(JSON.parse(await dj.async("string")).words)||{}; }catch(_){}
+    B={id,name:meta.name,zip,imgs,store,dict,words:null}; pi=Math.min(meta.pos||0,imgs.length-1); sel=-1; trOn=settings.showTr!==false;
+    urls.forEach(u=>URL.revokeObjectURL(u)); urls.clear();
+    $("#main").hidden=true; $("#reader").hidden=false; $("#rTitle").textContent=meta.name; $("#rRange").max=imgs.length;
+    closeSheet(); layout(); showPage();
+    meta.opened=Date.now(); idb.put("books",meta).catch(()=>{});
+  }catch(err){ toast("책을 열지 못했습니다: "+(err.message||err)); }
+}
+$("#rBack").onclick=()=>{ $("#reader").hidden=true; $("#main").hidden=false; B=null; urls.forEach(u=>URL.revokeObjectURL(u)); urls.clear(); loadShelf(); counts(); };
+const pageKey=i=>B.imgs[i].name;
+const pageData=i=>{ const P=B.store.pages||{}, n=pageKey(i); return P[n]||P[n.split("/").slice(1).join("/")]||null; };
+async function urlFor(i){ if(urls.has(i)) return urls.get(i); const e=B.imgs[i]; const ext=e.name.split(".").pop().toLowerCase();
+  const b=await e.async("blob"); const u=URL.createObjectURL(new Blob([b],{type:ext==="png"?"image/png":ext==="webp"?"image/webp":"image/jpeg"})); urls.set(i,u);
+  for(const [k,v] of urls) if(Math.abs(k-pi)>2){ URL.revokeObjectURL(v); urls.delete(k); } return u; }
+const img=$("#img"), layer=$("#tlayer");
+async function showPage(){
+  if(!B) return; const i=pi;
+  $("#rNum").textContent=`${pi+1}/${B.imgs.length}`; $("#rRange").value=pi+1; layer.innerHTML=""; sel=-1;
+  const u=await urlFor(i); if(i!==pi) return; img.src=u;
+  urlFor(Math.min(B.imgs.length-1,i+1)).catch(()=>{}); // 다음 장 미리 꺼내기
+  const meta=books.find(b=>b.id===B.id); if(meta){ meta.pos=pi; idb.put("books",meta).catch(()=>{}); }
+  paintTr(); if($("#sheet").classList.contains("open")&&sheetMode==="lines") showLines();
+}
+img.addEventListener("load",()=>drawOverlay());
+function turn(d){ if(!B) return; const n=pi+d; if(n<0||n>=B.imgs.length){ toast(n<0?"첫 페이지입니다.":"마지막 페이지입니다."); return; } pi=n; showPage(); }
+const fwd=side=>((side==="L")===settings.rtl)?1:-1;
+$("#rL").onclick=()=>turn(fwd("L")); $("#rR").onclick=()=>turn(fwd("R"));
+$("#rRange").oninput=e=>{ pi=+e.target.value-1; showPage(); };
+document.addEventListener("keydown",e=>{ if($("#reader").hidden) return; if(/INPUT/.test(document.activeElement?.tagName)&&document.activeElement.type==="text") return;
+  if(e.key==="ArrowLeft") turn(fwd("L")); else if(e.key==="ArrowRight") turn(fwd("R")); else if(e.key==="t") $("#rTr").click(); else if(e.key==="Escape") closeSheet(); });
+
+/* tap / swipe on the page */
+let t0=null;
+$("#stage").addEventListener("pointerdown",e=>{ if(e.pointerType==="mouse"&&e.button) return; t0={x:e.clientX,y:e.clientY,t:Date.now(),id:e.pointerId}; });
+$("#stage").addEventListener("pointerup",e=>{ if(!t0||e.pointerId!==t0.id) return; const dx=e.clientX-t0.x, dy=e.clientY-t0.y, dt=Date.now()-t0.t; t0=null;
+  if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.3&&dt<700){ turn(dx<0?fwd("L"):fwd("R")); return; } // 스와이프
+  if(Math.hypot(dx,dy)>12) return;
+  const r=img.getBoundingClientRect(); const nx=(e.clientX-r.left)/r.width*1000, ny=(e.clientY-r.top)/r.height*1000;
+  const k=hitBlock(nx,ny);
+  if(k>=0){ pickBlock(k); return; }
+  if(nx<0||nx>1000||e.clientX<r.left+r.width*.22){ turn(fwd("L")); return; } // 가장자리 탭 = 넘기기
+  if(e.clientX>r.right-r.width*.22){ turn(fwd("R")); return; }
+  if($("#sheet").classList.contains("open")&&!isWide()) closeSheet(); else $("#reader").classList.toggle("chrome-off");
+});
+$("#stage").addEventListener("pointercancel",()=>{ t0=null; });
+function hitBlock(nx,ny){ const pg=pageData(pi); if(!pg) return -1; let best=-1, ba=Infinity;
+  pg.blocks.forEach((b,k)=>{ const [x1,y1,x2,y2]=b.box, mx=(x2-x1)*.15+10, my=(y2-y1)*.1+10;
+    if(nx>=x1-mx&&nx<=x2+mx&&ny>=y1-my&&ny<=y2+my){ const a=(x2-x1)*(y2-y1); if(a<ba){ ba=a; best=k; } } }); return best; }
+
+/* translation overlay, snapped to the white balloon around each line */
+$("#rTr").onclick=()=>{ trOn=!trOn; settings.showTr=trOn; saveSettings(); paintTr(); };
+function paintTr(){ const pg=B&&pageData(pi), has=!!(pg&&pg.blocks.some(b=>b.ko));
+  const b=$("#rTr"); b.textContent=has?(trOn?"원문":"번역"):"번역 없음"; b.disabled=!has; b.classList.toggle("on",has&&trOn);
+  $("#pg").classList.toggle("tr-off",!trOn); }
+const snapCache=new Map();
+function drawOverlay(){
+  layer.innerHTML=""; const pg=B&&pageData(pi); if(!pg||!img.naturalWidth) return;
+  const W=img.clientWidth, H=img.clientHeight;
+  pg.blocks.forEach((b,k)=>{ const [x1,y1,x2,y2]=b.box; const h=document.createElement("div"); h.className="hot"+(k===sel?" on":"");
+    Object.assign(h.style,{left:x1/10+"%",top:y1/10+"%",width:(x2-x1)/10+"%",height:(y2-y1)/10+"%"}); layer.appendChild(h); });
+  let snap=snapCache.get(B.id+"|"+pi); if(!snap){ try{ snap=snapBalloons(pg.blocks); }catch(e){ snap=[]; } snapCache.set(B.id+"|"+pi,snap); if(snapCache.size>30) snapCache.delete(snapCache.keys().next().value); }
+  const used=new Map();
+  pg.blocks.forEach((b,k)=>{ if(!b.ko) return; const s=snap[k];
+    if(s && used.has(s.key)){ const d=used.get(s.key); d.textContent+=" "+b.ko; fit(d); return; }
+    let [x1,y1,x2,y2]=s?s.box:b.box; let x=x1/1000*W, y=y1/1000*H, w=(x2-x1)/1000*W, h=(y2-y1)/1000*H;
+    if(!s){ const tw=Math.max(w*1.3,Math.min(h*.65,w*3.2)); x-=(tw-w)/2; w=tw; y-=h*.06; h*=1.12; x=Math.max(0,Math.min(x,W-w)); }
+    const d=document.createElement("div"); d.className="tbox "+(s?s.shape:""); d.dataset.k=k; d.textContent=b.ko;
+    const pad=s&&s.shape==="oval"?[h*.13,w*.11]:[h*.07,w*.07];
+    Object.assign(d.style,{left:x+"px",top:y+"px",width:w+"px",height:h+"px",padding:pad[0]+"px "+pad[1]+"px"});
+    layer.appendChild(d); fit(d); if(s) used.set(s.key,d); });
+}
+function fit(d){ const w=d.clientWidth, h=d.clientHeight; let lo=9, hi=Math.max(10,Math.min(34,h*.42,w*.36));
+  const ok=()=>d.scrollHeight<=d.clientHeight+1&&d.scrollWidth<=d.clientWidth+1;
+  d.style.fontSize=hi+"px"; if(ok()) return; while(hi-lo>.5){ const m=(lo+hi)/2; d.style.fontSize=m+"px"; if(ok()) lo=m; else hi=m; } d.style.fontSize=lo+"px"; }
+let rsT; window.addEventListener("resize",()=>{ clearTimeout(rsT); rsT=setTimeout(()=>{ layout(); drawOverlay(); },150); });
+function snapBalloons(blocks){
+  const nw=img.naturalWidth, nh=img.naturalHeight, k=Math.min(1,800/Math.max(nw,nh));
+  const W=Math.max(1,Math.round(nw*k)), H=Math.max(1,Math.round(nh*k));
+  const cv=document.createElement("canvas"); cv.width=W; cv.height=H; const g=cv.getContext("2d",{willReadFrequently:true}); g.drawImage(img,0,0,W,H);
+  const px=g.getImageData(0,0,W,H).data, N=W*H, white=new Uint8Array(N);
+  for(let i=0,j=0;i<N;i++,j+=4) white[i]=(px[j]+px[j+1]+px[j+2])>=600?1:0;
+  const lab=new Int32Array(N), q=new Int32Array(N), comps=[];
+  for(let s=0;s<N;s++){ if(!white[s]||lab[s]) continue; const id=comps.length+1; let hd=0,tl=0,n=0,x1=W,y1=H,x2=0,y2=0; q[tl++]=s; lab[s]=id;
+    while(hd<tl){ const p=q[hd++]; n++; const x=p%W, y=(p-x)/W; if(x<x1)x1=x; if(x>x2)x2=x; if(y<y1)y1=y; if(y>y2)y2=y;
+      if(x>0&&white[p-1]&&!lab[p-1]){lab[p-1]=id;q[tl++]=p-1;} if(x<W-1&&white[p+1]&&!lab[p+1]){lab[p+1]=id;q[tl++]=p+1;}
+      if(y>0&&white[p-W]&&!lab[p-W]){lab[p-W]=id;q[tl++]=p-W;} if(y<H-1&&white[p+W]&&!lab[p+W]){lab[p+W]=id;q[tl++]=p+W;} }
+    comps.push({i:id,n,x1,y1,x2,y2,area:(x2-x1+1)*(y2-y1+1)}); }
+  const cands=comps.filter(c=>c.n>=N*.0012&&c.n<=N*.12&&c.x1>0&&c.y1>0&&c.x2<W-1&&c.y2<H-1&&c.n/c.area>.45);
+  return blocks.map(b=>{ const x1=b.box[0]/1000*W, y1=b.box[1]/1000*H, x2=b.box[2]/1000*W, y2=b.box[3]/1000*H;
+    const bw=Math.max(2,x2-x1), bh=Math.max(2,y2-y1), cx=(x1+x2)/2, cy=(y1+y2)/2; let best=null, bs=Infinity;
+    for(const c of cands){ if(!(cx>=c.x1&&cx<=c.x2&&cy>=c.y1&&cy<=c.y2)) continue; if(c.area<bw*bh*.8||c.area>bw*bh*12) continue;
+      const s=Math.abs(Math.log(c.area/(bw*bh*2))); if(s<bs){ bs=s; best=c; } }
+    return best?{key:best.i,box:[best.x1/W*1000,best.y1/H*1000,(best.x2+1)/W*1000,(best.y2+1)/H*1000],shape:best.n/best.area>.74?"rect":"oval"}:null; });
+}
+
+/* ================= study sheet ================= */
+let sheetMode="";
+const isWide=()=>window.innerWidth>=900&&window.innerWidth>window.innerHeight;
+function layout(){ const w=isWide(); $("#rwrap").classList.toggle("wide",w); document.documentElement.style.setProperty("--side",Math.min(440,Math.max(320,window.innerWidth*.3))+"px"); }
+function openSheet(html,mode){ sheetMode=mode; $("#sheetIn").innerHTML=html; $("#sheet").classList.add("open"); $("#sheetIn").scrollTop=0; if(isWide()) requestAnimationFrame(drawOverlay); }
+function closeSheet(){ $("#sheet").classList.remove("open"); sheetMode=""; sel=-1; document.querySelectorAll(".hot.on,.tbox.hit").forEach(x=>x.classList.remove("on","hit")); if(isWide()) requestAnimationFrame(drawOverlay); }
+let sy=null; $("#sheet .grab").addEventListener("pointerdown",e=>{ sy=e.clientY; }); window.addEventListener("pointerup",e=>{ if(sy!==null&&e.clientY-sy>40) closeSheet(); sy=null; });
+$("#rList").onclick=()=>{ if(sheetMode==="lines") closeSheet(); else showLines(); };
+$("#rWords").onclick=()=>{ if(sheetMode==="words") closeSheet(); else showBookWords(); };
+function showLines(){ const pg=pageData(pi);
+  if(!pg){ openSheet(`<h2>분석 결과가 없는 페이지</h2><p class="muted">PC 앱에서 이 폴더를 분석한 뒤 압축을 다시 만들어 주세요.</p>`,"lines"); return; }
+  openSheet(`<div class="row"><h2 class="grow">이 페이지 대사 ${pg.blocks.length}개</h2><button class="btn small" data-close>닫기</button></div>${pg.summary?`<div class="ko">${esc(pg.summary)}</div>`:""}
+    <div class="lines">${pg.blocks.map((b,k)=>`<div class="line" data-k="${k}"><span class="no">${k+1}</span><span>${b.jp?esc(b.jp):'<span class="muted">(문장 없음)</span>'}${b.ko?`<div class="k">${esc(b.ko)}</div>`:""}</span></div>`).join("")}</div>`,"lines");
+  $("#sheetIn").querySelectorAll(".line").forEach(l=>l.onclick=()=>pickBlock(+l.dataset.k)); }
+$("#sheetIn").addEventListener("click",e=>{ if(e.target.closest("[data-close]")) closeSheet(); });
+const ST={none:"단어장에 없음",new:"새 단어",learning:"학습 중",known:"아는 단어"};
+const meanOf=l=>(vocab[l]&&vocab[l].meaning)||(B&&B.dict[l]&&B.dict[l].meaning)||"";
+const noteOf=l=>(vocab[l]&&vocab[l].note)||(B&&B.dict[l]&&B.dict[l].note)||"";
+function pickBlock(k){
+  const pg=pageData(pi), b=pg.blocks[k]; sel=k;
+  document.querySelectorAll(".hot").forEach((h,i)=>h.classList.toggle("on",i===k)); document.querySelectorAll(".tbox").forEach(d=>d.classList.toggle("hit",+d.dataset.k===k));
+  const toks=b.tokens||[];
+  openSheet(`<div class="row"><button class="btn small" id="toLines">← 대사 목록</button><span class="muted grow">${k+1}번</span><button class="btn small" data-close>닫기</button></div>
+    ${b.jp?`<div class="jp">${esc(b.jp)} ${spk(b.jp)}</div>`:`<p class="muted">이 말풍선은 문장이 없습니다. PC 앱에서 '글자까지 읽기'로 분석해 주세요.</p>`}
+    ${b.ko?`<div class="ko">${esc(b.ko)}</div>`:""}
+    ${toks.length?`<div class="toks">${toks.map((t,i)=>t[4]?`<button class="tk w ${vocab[t[1]]?.status==="known"?"known":vocab[t[1]]?"have":""}" data-i="${i}" type="button"><small>${esc(t[2]!==t[0]&&/[㐀-鿿]/.test(t[0])?t[2]:"")}</small>${esc(t[0])}</button>`:`<span class="tk f"><small></small>${esc(t[0])}</span>`).join("")}</div>
+      <div class="row"><button class="btn small" id="addAll">이 대사 단어 모두 담기</button></div>`:""}
+    <div id="wcard"></div>`,"block");
+  $("#toLines").onclick=showLines;
+  $("#sheetIn").querySelectorAll(".tk.w").forEach(el=>el.onclick=()=>{ $("#sheetIn").querySelectorAll(".tk.w").forEach(x=>x.classList.remove("on")); el.classList.add("on"); wordCard(toks[+el.dataset.i],b.jp); });
+  const aa=$("#addAll"); if(aa) aa.onclick=()=>{ const seen=new Set(); toks.forEach(t=>{ if(t[4]&&!seen.has(t[1])){ seen.add(t[1]); addWord(t,b.jp); } }); toast(seen.size+"개를 담았습니다."); pickBlock(k); };
+  const first=toks.findIndex(t=>t[4]); if(first>=0){ $(`#sheetIn .tk.w[data-i="${first}"]`)?.classList.add("on"); wordCard(toks[first],b.jp); }
+}
+function wordCard(t,sent){
+  const [surf,lemma,reading,pos]=t, v=vocab[lemma], m=meanOf(lemma), note=noteOf(lemma), cnt=bookWords().find(w=>w.lemma===lemma);
+  $("#wcard").innerHTML=`<div class="card"><div class="lemma">${ruby(lemma,reading)} ${spk(reading||lemma)}</div>
+    <div class="row"><span class="pos">${esc(pos)}</span><span class="st ${v?v.status:"none"}">${ST[v?v.status:"none"]}</span>${cnt?`<span class="muted">이 책에서 ${cnt.count}번</span>`:""}${surf!==lemma?`<span class="muted">여기서는 「${esc(surf)}」</span>`:""}</div>
+    <input type="text" id="mean" value="${esc(m)}" placeholder="뜻 적기" aria-label="뜻">${note?`<p class="muted">💡 ${esc(note)}</p>`:""}
+    <div class="row">${v?`<button class="btn small" id="kn">${v.status==="known"?"다시 공부하기":"아는 단어로"}</button><button class="btn small" id="rm">단어장에서 빼기</button>`:`<button class="btn small primary" id="ad">단어장에 담기</button><button class="btn small" id="ak">이미 아는 단어</button>`}</div></div>`;
+  $("#mean").onchange=e=>{ if(vocab[lemma]){ vocab[lemma].meaning=e.target.value.trim(); saveVocab(); } };
+  const re=()=>{ const k=sel; pickBlock(k); const i=(pageData(pi).blocks[k].tokens||[]).findIndex(x=>x[1]===lemma&&x[4]); const el=$(`#sheetIn .tk.w[data-i="${i}"]`); if(el){ $("#sheetIn").querySelectorAll(".tk.w").forEach(x=>x.classList.remove("on")); el.classList.add("on"); wordCard(t,sent); } };
+  if(v){ $("#kn").onclick=()=>{ v.status=v.status==="known"?(v.reps?"learning":"new"):"known"; saveVocab(); re(); }; $("#rm").onclick=()=>{ delete vocab[lemma]; saveVocab(); re(); }; }
+  else { $("#ad").onclick=()=>{ addWord(t,sent,$("#mean").value.trim()); toast("「"+lemma+"」를 담았습니다."); re(); }; $("#ak").onclick=()=>{ addWord(t,sent,$("#mean").value.trim(),"known"); re(); }; }
+}
+function addWord(t,sent,meaning,status){
+  const [,lemma,reading,pos]=t; const cnt=bookWords().find(w=>w.lemma===lemma);
+  const w=vocab[lemma]||{lemma,reading,pos,meaning:"",note:"",count:0,examples:[],status:"new",ease:2.5,ivl:0,due:0,reps:0,added:Date.now()};
+  if(!w.meaning) w.meaning=meaning||meanOf(lemma); if(!w.note) w.note=noteOf(lemma);
+  if(!vocab[lemma]) w.count=cnt?cnt.count:1; if(status) w.status=status;
+  if(sent&&!w.examples.some(e=>e.jp===sent)) w.examples=[{jp:sent,src:B?B.name+" · "+(pi+1)+"쪽":""},...w.examples].slice(0,3);
+  vocab[lemma]=w; saveVocab();
+}
+function bookWords(){ if(!B) return []; if(B.words) return B.words; const m=new Map();
+  B.imgs.forEach((e,i)=>{ const pg=pageData(i); if(!pg) return; pg.blocks.forEach(b=>(b.tokens||[]).forEach(t=>{ if(!t[4]) return; let w=m.get(t[1]); if(!w){ w={lemma:t[1],reading:t[2],pos:t[3],count:0,page:i,example:b.jp||""}; m.set(t[1],w); } w.count++; })); });
+  return B.words=[...m.values()].sort((a,b)=>b.count-a.count); }
+function showBookWords(onlyNew=true){
+  const all=bookWords();
+  if(!all.length){ openSheet(`<div class="row"><h2 class="grow">이 책의 단어</h2><button class="btn small" data-close>닫기</button></div><p class="muted">단어 정보가 없습니다. PC 앱에서 '글자까지 읽기'로 분석한 뒤 압축을 다시 만들어 주세요.</p>`,"words"); return; }
+  const rows=all.filter(w=>!onlyNew||!vocab[w.lemma]).slice(0,300);
+  openSheet(`<div class="row"><h2 class="grow">이 책의 단어 ${all.length}개</h2><button class="btn small" data-close>닫기</button></div>
+    <div class="row"><label class="row muted" style="gap:4px"><input type="checkbox" id="onlyNew" ${onlyNew?"checked":""}> 단어장에 없는 것만</label><button class="btn small" id="top20">위 20개 담기</button></div>
+    <p class="muted">많이 나온 순서입니다. 단어를 누르면 처음 나온 페이지로 갑니다.</p>
+    <div class="list">${rows.map((w,i)=>`<div class="it"><span class="c">${w.count}</span><div style="min-width:0"><div class="w" data-go="${w.page}">${ruby(w.lemma,w.reading)} ${spk(w.reading||w.lemma)}</div><div class="m">${esc(meanOf(w.lemma)||w.example)}</div></div>${vocab[w.lemma]?`<span class="st ${vocab[w.lemma].status}">${ST[vocab[w.lemma].status]}</span>`:`<button class="btn small" data-add="${i}">담기</button>`}</div>`).join("")}</div>`,"words");
+  $("#onlyNew").onchange=e=>showBookWords(e.target.checked);
+  $("#top20").onclick=()=>{ const r=all.filter(w=>!vocab[w.lemma]).slice(0,20); r.forEach(w=>addWord([w.lemma,w.lemma,w.reading,w.pos,1],w.example)); toast(r.length+"개를 담았습니다."); showBookWords(onlyNew); };
+  $("#sheetIn").querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{ const w=rows[+b.dataset.add]; addWord([w.lemma,w.lemma,w.reading,w.pos,1],w.example); showBookWords(onlyNew); });
+  $("#sheetIn").querySelectorAll("[data-go]").forEach(a=>a.onclick=()=>{ pi=+a.dataset.go; closeSheet(); showPage(); });
+}
+
+/* ================= vocab ================= */
+function counts(){ $("#nVocab").textContent=Object.keys(vocab).length; $("#nDue").textContent=dueList().length; }
+function renderVocab(q="",f="all"){
+  const all=Object.values(vocab), rows=all.filter(w=>(f==="all"||w.status===f)&&(!q||(w.lemma+(w.reading||"")+(w.meaning||"")).includes(q))).sort((a,b)=>(b.count||0)-(a.count||0));
+  const el=$("#v-vocab");
+  el.innerHTML=`<div class="row" style="margin-bottom:10px"><input type="text" id="vq" class="grow" placeholder="검색" value="${esc(q)}" aria-label="단어장 검색" style="width:auto;flex:1 1 160px">
+    <select id="vf" aria-label="상태" style="padding:8px;border-radius:8px;border:1.5px solid var(--rule);background:var(--paper)">${["all","new","learning","known"].map(s=>`<option value="${s}" ${s===f?"selected":""}>${s==="all"?"전체":ST[s]}</option>`).join("")}</select></div>
+    ${rows.length?`<div class="list">${rows.map((w,i)=>`<div class="it"><span class="c">${w.count||1}</span><div style="min-width:0"><div class="w">${ruby(w.lemma,w.reading)} ${spk(w.reading||w.lemma)}</div><input type="text" data-m="${i}" value="${esc(w.meaning||"")}" placeholder="뜻 적기" aria-label="${esc(w.lemma)} 뜻"></div>
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><button class="btn small" data-k="${i}">${w.status==="known"?"다시":"알아요"}</button><button class="btn small ghost" data-d="${i}" aria-label="빼기">✕</button></div></div>`).join("")}</div>`
+      :`<div class="empty">${all.length?"조건에 맞는 단어가 없습니다.":"<b>아직 담은 단어가 없습니다</b><span>책을 읽다가 말풍선을 누르고 단어를 담아 보세요.</span>"}</div>`}`;
+  $("#vq").oninput=e=>{ const v=e.target.value; renderVocab(v,f); const n=$("#vq"); n.focus(); n.setSelectionRange(v.length,v.length); };
+  $("#vf").onchange=e=>renderVocab(q,e.target.value);
+  el.querySelectorAll("[data-m]").forEach(x=>x.onchange=()=>{ rows[+x.dataset.m].meaning=x.value.trim(); saveVocab(); });
+  el.querySelectorAll("[data-k]").forEach(x=>x.onclick=()=>{ const w=rows[+x.dataset.k]; w.status=w.status==="known"?(w.reps?"learning":"new"):"known"; saveVocab(); renderVocab(q,f); });
+  el.querySelectorAll("[data-d]").forEach(x=>x.onclick=()=>{ delete vocab[rows[+x.dataset.d].lemma]; saveVocab(); renderVocab(q,f); });
+}
+
+/* ================= review ================= */
+function dueList(){ const now=Date.now(), all=Object.values(vocab).filter(w=>w.status!=="known");
+  return [...all.filter(w=>w.reps>0&&w.due<=now).sort((a,b)=>a.due-b.due), ...all.filter(w=>!w.reps).sort((a,b)=>(b.count||0)-(a.count||0)).slice(0,20)]; }
+let queue=[], cur=null, flipped=false, done=0;
+function startReview(){ queue=dueList(); done=0; next(); }
+function next(){ cur=queue.shift()||null; flipped=false; drawCard(); }
+const nextIvl=(w,g)=>g===1?0:g===2?Math.max(1,Math.round(w.ivl*1.2)):g===3?(w.ivl?Math.round(w.ivl*w.ease):1):(w.ivl?Math.round(w.ivl*w.ease*1.3):3);
+const fmt=d=>d===0?"곧 다시":d<30?d+"일":d<365?Math.round(d/30)+"달":Math.round(d/365)+"년";
+function drawCard(){ const el=$("#v-review");
+  if(!cur){ const nx=Object.values(vocab).filter(w=>w.status!=="known"&&w.reps>0).map(w=>w.due).sort((a,b)=>a-b)[0];
+    el.innerHTML=`<div class="empty"><b>${done?"오늘 복습 끝!":"복습할 카드가 없습니다"}</b><span>${done?done+"장을 넘겼습니다. ":""}${nx?"다음 복습: "+new Date(nx).toLocaleString("ko-KR",{month:"long",day:"numeric",hour:"numeric"}):"책을 읽다가 단어를 담으면 카드가 생깁니다."}</span></div>`; counts(); return; }
+  const w=cur, ex=(w.examples||[])[0];
+  el.innerHTML=`<div class="rv"><div class="muted">남은 카드 ${queue.length+1}장 · ×${w.count||1}</div>
+    <div class="bubble" id="bub" role="button" tabindex="0" aria-label="카드 뒤집기"><div class="big${w.lemma.length>8?" long":""}">${flipped?ruby(w.lemma,w.reading):esc(w.lemma)}</div>${spk(w.reading||w.lemma)}
+    ${flipped?`<div style="font-weight:700;font-size:1.15rem">${esc(w.meaning)||'<span class="muted">(뜻 없음 — 단어장에서 적어 주세요)</span>'}</div>${w.note?`<div class="muted">💡 ${esc(w.note)}</div>`:""}`:""}
+    ${ex?`<div class="muted" style="font-family:var(--f-jp)">${esc(ex.jp)}</div>`:""}${flipped?"":`<div class="muted">탭해서 뒤집기</div>`}</div>
+    ${flipped?`<div class="grades">${[[1,"다시"],[2,"어려움"],[3,"알맞음"],[4,"쉬움"]].map(([g,l])=>`<button class="g${g}" data-g="${g}">${l}<small>${fmt(nextIvl(w,g))}</small></button>`).join("")}</div>`:`<div style="height:62px"></div>`}</div>`;
+  $("#bub").onclick=e=>{ if(!e.target.closest("[data-say]")&&!flipped){ flipped=true; drawCard(); if(settings.autoSay) say(w.reading||w.lemma); } };
+  el.querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>grade(+b.dataset.g)); }
+function grade(g){ const w=cur;
+  if(g===1){ w.ease=Math.max(1.3,w.ease-.2); w.ivl=0; w.due=Date.now()+60e3; queue.push(w); }
+  else{ if(g===2) w.ease=Math.max(1.3,w.ease-.15); if(g===4) w.ease+=.15; w.ivl=nextIvl(w,g); w.due=Date.now()+w.ivl*DAY; done++; }
+  w.reps=(w.reps||0)+1; if(w.status==="new") w.status="learning"; saveVocab(); next(); }
+
+/* ================= settings, import / export ================= */
+async function mergePcVocab(z){ const vj=z.file(/(^|\/)koma-vocab\.json$/i)[0]; if(!vj) return; try{ const n=mergeVocab(JSON.parse(await vj.async("string"))); if(n) toast(`PC 단어장에서 ${n}개를 합쳤습니다.`); }catch(_){} }
+function mergeVocab(src){ const words=src.words||src; let n=0;
+  for(const [l,w] of Object.entries(words||{})){ if(!w||typeof w!=="object") continue; const mine=vocab[l];
+    if(!mine){ vocab[l]={lemma:l,reading:w.reading||"",pos:w.pos||"",meaning:w.meaning||"",note:w.note||"",count:w.count||1,examples:w.examples||[],status:w.status||"new",ease:w.ease||2.5,ivl:w.ivl||0,due:w.due||0,reps:w.reps||0,added:w.added||Date.now()}; n++; }
+    else{ if(!mine.meaning&&w.meaning) mine.meaning=w.meaning; if(!mine.note&&w.note) mine.note=w.note;
+      if((w.reps||0)>(mine.reps||0)) Object.assign(mine,{status:w.status,ease:w.ease,ivl:w.ivl,due:w.due,reps:w.reps}); } }
+  saveVocab(); return n; }
+function renderMore(){ const el=$("#v-more");
+  el.innerHTML=`<div style="display:flex;flex-direction:column;gap:14px;max-width:560px">
+    <div class="card"><b>읽기</b>
+      <label class="row"><input type="checkbox" id="sRtl" ${settings.rtl?"checked":""}> 일본 만화 방향 (오른쪽 → 왼쪽으로 넘김)</label>
+      <label class="row"><input type="checkbox" id="sTr" ${settings.showTr!==false?"checked":""}> 페이지를 열면 번역을 덮어서 보기</label>
+      <label class="row"><input type="checkbox" id="sSay" ${settings.autoSay?"checked":""}> 복습 카드를 뒤집으면 발음 읽기</label>
+      <p class="muted">넘기기: 좌우로 밀기, 화면 가장자리 탭, 아래 ◀ ▶. 가운데를 탭하면 메뉴가 숨겨집니다.</p></div>
+    <div class="card"><b>단어장 옮기기</b><p class="muted">단어장과 복습 기록은 이 기기 안에만 저장됩니다. 다른 기기(폰 ↔ 패드)와 맞추려면 파일로 내보내고 가져오세요. 가져오면 기존 기록과 합칩니다.</p>
+      <div class="row"><button class="btn small" id="exV">⬇ 단어장 내보내기</button><button class="btn small" id="imV">⬆ 단어장 가져오기</button><button class="btn small" id="exA">Anki용 내보내기</button></div>
+      <input type="file" id="imIn" accept=".json,application/json" hidden></div>
+    <div class="card"><b>저장 공간</b><p class="muted" id="quota">확인 중…</p></div>
+    <p class="muted">코마 리더 · 모든 데이터는 이 기기 안에만 있습니다. 만화와 단어장은 어디에도 올라가지 않습니다.</p></div>`;
+  $("#sRtl").onchange=e=>{ settings.rtl=e.target.checked; saveSettings(); };
+  $("#sTr").onchange=e=>{ settings.showTr=e.target.checked; saveSettings(); };
+  $("#sSay").onchange=e=>{ settings.autoSay=e.target.checked; saveSettings(); };
+  const dl=(name,text,type)=>{ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type})); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000); };
+  $("#exV").onclick=()=>dl(`koma-vocab-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify({version:1,words:vocab}),"application/json");
+  $("#exA").onclick=()=>{ const rows=Object.values(vocab).map(w=>[w.lemma,w.reading,w.meaning,(w.examples||[])[0]?.jp||""].map(x=>String(x||"").replace(/[\t\n]/g," ")).join("\t")); dl("koma-anki.txt","#separator:tab\n#columns:단어\t읽기\t뜻\t예문\n"+rows.join("\n"),"text/plain"); };
+  $("#imV").onclick=()=>$("#imIn").click();
+  $("#imIn").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return; try{ const n=mergeVocab(JSON.parse(await f.text())); toast(`합쳤습니다. 새 단어 ${n}개.`); }catch(err){ toast("단어장 파일을 읽지 못했습니다."); } };
+  navigator.storage?.estimate?.().then(q=>{ $("#quota").textContent=`사용 ${(q.usage/1e6).toFixed(0)}MB / 가능 ${(q.quota/1e9).toFixed(1)}GB · 책 ${books.length}권`; }).catch(()=>{ $("#quota").textContent="확인할 수 없습니다."; });
+}
+
+/* ================= tabs & boot ================= */
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>show(b.dataset.v));
+function show(v){ document.querySelectorAll(".tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===v));
+  ["shelf","vocab","review","more"].forEach(s=>$("#v-"+s).hidden=s!==v);
+  if(v==="vocab") renderVocab(); if(v==="review") startReview(); if(v==="more") renderMore(); if(v==="shelf") renderShelf(); }
+(async()=>{
+  try{ vocab=(await idb.get("kv","vocab"))||{}; settings={...settings,...((await idb.get("kv","settings"))||{})}; }catch(e){ toast("저장소를 열 수 없습니다. 브라우저의 시크릿 모드라면 일반 모드로 열어 주세요."); }
+  counts(); await loadShelf().catch(()=>renderShelf());
+  // 설치된 앱에서 zip 파일을 '연결 프로그램'으로 열었을 때
+  if("launchQueue" in window) launchQueue.setConsumer(async p=>{ for(const h of p.files||[]){ const f=await h.getFile(); await addBook(f); } });
+  if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+})();
+})();
+</script>
+</body>
+</html>
